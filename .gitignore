@@ -1,4 +1,6 @@
 goviesdeze
 .env
 compose.yml
-storage
+/storage
+!internal/handlers/storage/
+!internal/handlers/storage/*.go
