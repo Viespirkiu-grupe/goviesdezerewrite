@@ -30,12 +30,19 @@ import (
 func GetFile(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		filename := strings.TrimSpace(c.Param("filename"))
+		if cfg.AppDebug {
+			log.Printf("debug download start: filename=%q query=%q", filename, c.Request.URL.RawQuery)
+		}
+
 		idPart := filename
 		if dot := strings.Index(filename, "."); dot > 0 {
 			idPart = filename[:dot]
 		}
 
 		if !fileid.IsNumericOrMD5(idPart) {
+			if cfg.AppDebug {
+				log.Printf("debug download invalid id: filename=%q id_part=%q", filename, idPart)
+			}
 			c.JSON(http.StatusBadRequest, gin.H{"error": "id must be a number or MD5"})
 			return
 		}
@@ -53,8 +60,9 @@ func GetFile(cfg *config.Config) gin.HandlerFunc {
 		var fileInfo os.FileInfo
 
 		for _, candidate := range candidates {
-			// Log the candidate being checked
-			log.Printf("checking candidate path: %s", candidate)
+			if cfg.AppDebug {
+				log.Printf("debug download candidate path: %s", candidate)
+			}
 			if info, err := os.Stat(candidate); err == nil {
 				filePath = candidate
 				fileInfo = info
@@ -63,8 +71,14 @@ func GetFile(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		if filePath == "" {
+			if cfg.AppDebug {
+				log.Printf("debug download file not found: filename=%q", filename)
+			}
 			c.JSON(http.StatusNotFound, gin.H{"error": "File not found"})
 			return
+		}
+		if cfg.AppDebug {
+			log.Printf("debug download selected path: %q", filePath)
 		}
 
 		var rdr io.Reader
@@ -75,6 +89,9 @@ func GetFile(cfg *config.Config) gin.HandlerFunc {
 			// Normal file serving
 			f, err := os.Open(filePath)
 			if err != nil {
+				if cfg.AppDebug {
+					log.Printf("debug download open failed: path=%q err=%v", filePath, err)
+				}
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to open file"})
 				return
 			}
@@ -83,10 +100,19 @@ func GetFile(cfg *config.Config) gin.HandlerFunc {
 			rdr = f
 			size = fileInfo.Size()
 			contentType = getContentType(filePath)
+			if cfg.AppDebug {
+				log.Printf("debug download plain file: size=%d content_type=%q", size, contentType)
+			}
 		} else {
 			// Extraction requested
+			if cfg.AppDebug {
+				log.Printf("debug download extract requested: target=%q", extractTarget)
+			}
 			buf, err := os.ReadFile(filePath)
 			if err != nil {
+				if cfg.AppDebug {
+					log.Printf("debug download archive read failed: path=%q err=%v", filePath, err)
+				}
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read archive"})
 				return
 			}
@@ -99,6 +125,9 @@ func GetFile(cfg *config.Config) gin.HandlerFunc {
 				filequery.SimilarityFunc(utils.Similarity),
 			)
 			if err != nil {
+				if cfg.AppDebug {
+					log.Printf("debug download extract failed: target=%q err=%v", extractTarget, err)
+				}
 				switch {
 				case errors.Is(err, archivequery.ErrInvalidArchive):
 					c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid archive"})
@@ -114,13 +143,22 @@ func GetFile(cfg *config.Config) gin.HandlerFunc {
 			rdr = bytes.NewReader(extracted)
 			size = int64(len(extracted)) // size is just the buffer length
 			contentType = getContentType(best)
+			if cfg.AppDebug {
+				log.Printf("debug download extracted file: best=%q size=%d content_type=%q", best, size, contentType)
+			}
 		}
 
 		// Range support
 		rangeHeader := c.GetHeader("Range")
 		if rangeHeader != "" {
+			if cfg.AppDebug {
+				log.Printf("debug download range header: %q", rangeHeader)
+			}
 			start, end, err := filequery.ParseRange(rangeHeader, size)
 			if err != nil {
+				if cfg.AppDebug {
+					log.Printf("debug download invalid range: %q err=%v", rangeHeader, err)
+				}
 				c.Header("Content-Range", fmt.Sprintf("bytes */%d", size))
 				c.Status(http.StatusRequestedRangeNotSatisfiable)
 				return
@@ -129,6 +167,9 @@ func GetFile(cfg *config.Config) gin.HandlerFunc {
 			var limitedReader io.Reader
 			if seeker, ok := rdr.(io.Seeker); ok && rdr != nil {
 				if _, err := seeker.Seek(start, io.SeekStart); err != nil {
+					if cfg.AppDebug {
+						log.Printf("debug download seek failed: start=%d err=%v", start, err)
+					}
 					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to seek file"})
 					return
 				}
@@ -145,7 +186,10 @@ func GetFile(cfg *config.Config) gin.HandlerFunc {
 			c.Header("Content-Type", contentType)
 			c.Status(http.StatusPartialContent)
 			if _, err := io.Copy(c.Writer, limitedReader); err != nil {
-				log.Printf("copy range response failed: %v", err)
+				log.Printf("download range response failed: %v", err)
+			}
+			if cfg.AppDebug {
+				log.Printf("debug download range served: start=%d end=%d size=%d", start, end, size)
 			}
 			return
 		}
@@ -156,7 +200,10 @@ func GetFile(cfg *config.Config) gin.HandlerFunc {
 		c.Header("Accept-Ranges", "bytes")
 		c.Status(http.StatusOK)
 		if _, err := io.Copy(c.Writer, rdr); err != nil {
-			log.Printf("copy full response failed: %v", err)
+			log.Printf("download full response failed: %v", err)
+		}
+		if cfg.AppDebug {
+			log.Printf("debug download full served: size=%d", size)
 		}
 	}
 }

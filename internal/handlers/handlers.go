@@ -11,7 +11,7 @@ import (
 // RegisterRoutes registers all the routes for the application
 func RegisterRoutes(router *gin.Engine, cfg *config.Config) {
 	// Storage usage endpoint
-	router.GET("/storage-usage", storage.GetStorageUsage)
+	router.GET("/storage-usage", storage.GetStorageUsage(cfg))
 
 	// File operations
 	router.PUT("/file/:filename", file.UploadFile(cfg))

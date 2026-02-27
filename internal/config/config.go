@@ -10,6 +10,7 @@ type Config struct {
 	StoragePath   string
 	APIKey        string
 	RequireAPIKey bool
+	AppDebug      bool
 }
 
 func Load() *Config {
@@ -18,6 +19,7 @@ func Load() *Config {
 		StoragePath:   getEnv("STORAGE_PATH", "/storage"),
 		APIKey:        getEnv("API_KEY", "super-secret-key"),
 		RequireAPIKey: getEnvBool("REQUIRE_API_KEY", true),
+		AppDebug:      getEnvBool("APP_DEBUG", false),
 	}
 
 	return cfg

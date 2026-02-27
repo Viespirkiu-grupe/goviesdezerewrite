@@ -29,6 +29,10 @@ func main() {
 
 	// Load configuration
 	cfg := config.Load()
+	if cfg.AppDebug {
+		log.Printf("APP_DEBUG enabled: verbose logging is active")
+		log.Printf("config: port=%s storage_path=%s require_api_key=%v", cfg.Port, cfg.StoragePath, cfg.RequireAPIKey)
+	}
 
 	// Initialize storage usage
 	if err := utils.LoadUsage(); err != nil {
@@ -44,9 +48,9 @@ func main() {
 	router := gin.Default()
 
 	// Add middleware
-	router.Use(middleware.RequestLogger())
+	router.Use(middleware.RequestLogger(cfg.AppDebug))
 	if cfg.RequireAPIKey {
-		router.Use(middleware.APIKeyAuth(cfg.APIKey))
+		router.Use(middleware.APIKeyAuth(cfg.APIKey, cfg.AppDebug))
 	}
 
 	// Register routes
