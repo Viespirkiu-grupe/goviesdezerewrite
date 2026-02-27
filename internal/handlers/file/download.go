@@ -13,11 +13,12 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
-	"strings"
 
+	"goviesdeze/internal/adapters/archive/ziparchive"
 	"goviesdeze/internal/config"
+	"goviesdeze/internal/core/archivequery"
+	"goviesdeze/internal/core/filequery"
 	"goviesdeze/internal/utils"
-	"goviesdeze/internal/ziputil"
 
 	"github.com/gin-gonic/gin"
 	"github.com/h2non/filetype"
@@ -74,36 +75,35 @@ func GetFile(cfg *config.Config) gin.HandlerFunc {
 				return
 			}
 
-			files, err := ziputil.IdentityFilesV2(c.Request.Context(), buf)
+			extracted, best, err := archivequery.ReadBestMatch(
+				c.Request.Context(),
+				ziparchive.Service{},
+				buf,
+				extractTarget,
+				filequery.SimilarityFunc(utils.Similarity),
+			)
 			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid archive"})
+				switch {
+				case errors.Is(err, archivequery.ErrInvalidArchive):
+					c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid archive"})
+				case errors.Is(err, archivequery.ErrFileNotFound):
+					c.JSON(http.StatusNotFound, gin.H{"error": "File not found in archive"})
+				default:
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Error extracting file"})
+				}
 				return
 			}
-
-			best, err := bestMatch(extractTarget, files)
-			if err != nil {
-				c.JSON(http.StatusNotFound, gin.H{"error": "File not found in archive"})
-				return
-			}
-
-			fileReader, err := ziputil.GetFileFromArchiveV2(c.Request.Context(), buf, best)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Error extracting file"})
-				return
-			}
-			defer fileReader.Close()
 
 			// Wrap in a bytes.Reader so it implements both io.Reader and io.Seeker
-			buf2, _ := io.ReadAll(fileReader)
-			rdr = bytes.NewReader(buf2)
-			size = int64(len(buf2)) // size is just the buffer length
+			rdr = bytes.NewReader(extracted)
+			size = int64(len(extracted)) // size is just the buffer length
 			contentType = getContentType(best)
 		}
 
 		// Range support
 		rangeHeader := c.GetHeader("Range")
 		if rangeHeader != "" {
-			start, end, err := parseRange(rangeHeader, size)
+			start, end, err := filequery.ParseRange(rangeHeader, size)
 			if err != nil {
 				c.Header("Content-Range", fmt.Sprintf("bytes */%d", size))
 				c.Status(http.StatusRequestedRangeNotSatisfiable)
@@ -112,10 +112,11 @@ func GetFile(cfg *config.Config) gin.HandlerFunc {
 
 			var limitedReader io.Reader
 			if seeker, ok := rdr.(io.Seeker); ok && rdr != nil {
-				// rdr is already a *bytes.Reader (implements io.Reader + io.Seeker)
-				seeker.Seek(start, io.SeekStart)
-				limitedReader := io.LimitReader(rdr, end-start+1)
-				io.Copy(c.Writer, limitedReader)
+				if _, err := seeker.Seek(start, io.SeekStart); err != nil {
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to seek file"})
+					return
+				}
+				limitedReader = io.LimitReader(rdr, end-start+1)
 			} else {
 				// For non-seekable readers (rare), read into buffer
 				buf, _ := io.ReadAll(rdr)
@@ -127,7 +128,9 @@ func GetFile(cfg *config.Config) gin.HandlerFunc {
 			c.Header("Content-Length", strconv.FormatInt(end-start+1, 10))
 			c.Header("Content-Type", contentType)
 			c.Status(http.StatusPartialContent)
-			io.Copy(c.Writer, limitedReader)
+			if _, err := io.Copy(c.Writer, limitedReader); err != nil {
+				log.Printf("copy range response failed: %v", err)
+			}
 			return
 		}
 
@@ -136,39 +139,10 @@ func GetFile(cfg *config.Config) gin.HandlerFunc {
 		c.Header("Content-Type", contentType)
 		c.Header("Accept-Ranges", "bytes")
 		c.Status(http.StatusOK)
-		io.Copy(c.Writer, rdr)
-	}
-}
-
-// parseRange parses the Range header and returns start and end positions
-func parseRange(rangeHeader string, fileSize int64) (int64, int64, error) {
-	rangeHeader = strings.TrimPrefix(rangeHeader, "bytes=")
-	parts := strings.Split(rangeHeader, "-")
-
-	if len(parts) != 2 {
-		return 0, 0, fmt.Errorf("invalid range format")
-	}
-
-	start, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
-		return 0, 0, err
-	}
-
-	var end int64
-	if parts[1] == "" {
-		end = fileSize - 1
-	} else {
-		end, err = strconv.ParseInt(parts[1], 10, 64)
-		if err != nil {
-			return 0, 0, err
+		if _, err := io.Copy(c.Writer, rdr); err != nil {
+			log.Printf("copy full response failed: %v", err)
 		}
 	}
-
-	if start >= fileSize || end >= fileSize || start > end {
-		return 0, 0, fmt.Errorf("invalid range")
-	}
-
-	return start, end, nil
 }
 
 // getContentType determines the content type based on file extension
@@ -178,24 +152,6 @@ func getContentType(filePath string) string {
 		return kind.MIME.Value
 	}
 	return "application/octet-stream"
-}
-
-func bestMatch(file string, files []string) (string, error) {
-	var bestMatch string
-	bestSim := 0.0
-	for _, f := range files {
-		sim := utils.Similarity(f, file)
-		log.Printf("considering file %q %v %s with similarity %.3f", f, f, f, sim)
-		if sim > bestSim || strings.EqualFold(f, file) {
-			bestSim = sim
-			bestMatch = f
-		}
-	}
-	if bestSim < 0.4 {
-		return "", errors.New("file not found in archive")
-	}
-	log.Printf("best match: %q with similarity %.3f", bestMatch, bestSim)
-	return bestMatch, nil
 }
 
 func writeResponse(w http.ResponseWriter, r *http.Request, rdr io.ReadCloser, upRes *http.Response, name string) bool {
