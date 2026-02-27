@@ -2,11 +2,13 @@ package file
 
 import (
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"goviesdeze/internal/config"
 	"goviesdeze/internal/utils"
@@ -42,8 +44,13 @@ func DownloadURL(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		// Local filesystem storage logic
-		// Create temporary file
-		tmpFile, err := os.CreateTemp("", "tmp_*")
+		if err := os.MkdirAll(cfg.StoragePath, 0o755); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create storage directory"})
+			return
+		}
+
+		// Create temporary file inside storage path to avoid cross-device rename issues.
+		tmpFile, err := os.CreateTemp(cfg.StoragePath, "tmp_*")
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create temporary file"})
 			return
@@ -86,7 +93,7 @@ func DownloadURL(cfg *config.Config) gin.HandlerFunc {
 		}
 
 		// Move temp file to final location
-		if err := os.Rename(tmpFile.Name(), finalPath); err != nil {
+		if err := moveFile(tmpFile.Name(), finalPath); err != nil {
 			os.Remove(tmpFile.Name())
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to move file"})
 			return
@@ -105,4 +112,38 @@ func DownloadURL(cfg *config.Config) gin.HandlerFunc {
 		}
 	}
 
+}
+
+func moveFile(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	} else if !errors.Is(err, syscall.EXDEV) {
+		return err
+	}
+
+	if err := copyFile(src, dst); err != nil {
+		return err
+	}
+
+	return os.Remove(src)
+}
+
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+
+	return out.Sync()
 }

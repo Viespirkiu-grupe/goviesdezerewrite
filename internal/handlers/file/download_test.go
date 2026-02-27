@@ -144,3 +144,34 @@ func TestGetFileRejectsInvalidID(t *testing.T) {
 		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
 	}
 }
+
+func TestGetFileAllowsMD5WithExtension(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	storage := t.TempDir()
+	filename := "d41d8cd98f00b204e9800998ecf8427e.zip"
+	filePath := utils.ShardPath(filename, storage)
+
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filePath, []byte("zip-bytes"), 0o644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	cfg := &config.Config{StoragePath: storage}
+	router := gin.New()
+	router.GET("/file/:filename", GetFile(cfg))
+
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/file/%s", filename), nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+	}
+	if rr.Body.String() != "zip-bytes" {
+		t.Fatalf("body = %q, want %q", rr.Body.String(), "zip-bytes")
+	}
+}

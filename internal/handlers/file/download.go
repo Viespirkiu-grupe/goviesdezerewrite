@@ -30,7 +30,12 @@ import (
 func GetFile(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		filename := strings.TrimSpace(c.Param("filename"))
-		if !fileid.IsNumericOrMD5(filename) {
+		idPart := filename
+		if dot := strings.Index(filename, "."); dot > 0 {
+			idPart = filename[:dot]
+		}
+
+		if !fileid.IsNumericOrMD5(idPart) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "id must be a number or MD5"})
 			return
 		}
