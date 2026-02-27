@@ -1,0 +1,10 @@
+services:
+  goviesdeze:
+    build: .
+    container_name: goviesdeze
+    restart: unless-stopped
+    ports:
+      - 3000:3000
+    volumes:
+      - ./storage:/storage
+      - ./usage.json:/work/usage.json
