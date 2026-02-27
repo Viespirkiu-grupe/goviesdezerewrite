@@ -13,10 +13,12 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"goviesdeze/internal/adapters/archive/ziparchive"
 	"goviesdeze/internal/config"
 	"goviesdeze/internal/core/archivequery"
+	"goviesdeze/internal/core/fileid"
 	"goviesdeze/internal/core/filequery"
 	"goviesdeze/internal/utils"
 
@@ -27,8 +29,17 @@ import (
 // GetFile handles file downloads with optional extraction and range support
 func GetFile(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		filename := c.Param("filename")
-		extractTarget := c.Query("extract") // ?extract=/path/to/file
+		filename := strings.TrimSpace(c.Param("filename"))
+		if !fileid.IsNumericOrMD5(filename) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "id must be a number or MD5"})
+			return
+		}
+
+		extractTarget := strings.TrimSpace(c.Query("extract"))
+		convertTo := strings.TrimSpace(c.Query("convertTo"))
+		if convertTo != "" {
+			extractTarget = convertTo
+		}
 		basePath := utils.ShardPath(filename, cfg.StoragePath)
 
 		// Find the local file

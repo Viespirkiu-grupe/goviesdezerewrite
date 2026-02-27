@@ -56,7 +56,7 @@ func TestGetFileSupportsSuffixAndClampedRanges(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	storage := t.TempDir()
-	filename := "abcdef"
+	filename := "d41d8cd98f00b204e9800998ecf8427e"
 	filePath := utils.ShardPath(filename, storage)
 
 	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
@@ -110,4 +110,37 @@ func TestGetFileSupportsSuffixAndClampedRanges(t *testing.T) {
 			t.Fatalf("Content-Range = %q, want %q", got, "bytes 8-9/10")
 		}
 	})
+
+	t.Run("empty convertTo serves file as is", func(t *testing.T) {
+		t.Parallel()
+
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/file/%s?convertTo=", filename), nil)
+		rr := httptest.NewRecorder()
+
+		router.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", rr.Code, http.StatusOK)
+		}
+		if rr.Body.String() != "0123456789" {
+			t.Fatalf("body = %q, want %q", rr.Body.String(), "0123456789")
+		}
+	})
+}
+
+func TestGetFileRejectsInvalidID(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := &config.Config{StoragePath: t.TempDir()}
+	router := gin.New()
+	router.GET("/file/:filename", GetFile(cfg))
+
+	req := httptest.NewRequest(http.MethodGet, "/file/not-valid-id", nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rr.Code, http.StatusBadRequest)
+	}
 }
