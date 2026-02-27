@@ -18,9 +18,14 @@ func TestParseRange(t *testing.T) {
 	}{
 		{name: "full range", rangeValue: "bytes=0-9", size: 100, wantStart: 0, wantEnd: 9},
 		{name: "tail from start", rangeValue: "bytes=10-", size: 100, wantStart: 10, wantEnd: 99},
+		{name: "suffix range", rangeValue: "bytes=-4", size: 10, wantStart: 6, wantEnd: 9},
+		{name: "suffix larger than file", rangeValue: "bytes=-100", size: 10, wantStart: 0, wantEnd: 9},
+		{name: "clamps end to file size", rangeValue: "bytes=8-1000", size: 10, wantStart: 8, wantEnd: 9},
 		{name: "invalid format", rangeValue: "items=0-9", size: 100, wantErr: true},
 		{name: "start greater than end", rangeValue: "bytes=10-1", size: 100, wantErr: true},
 		{name: "start outside file", rangeValue: "bytes=101-200", size: 100, wantErr: true},
+		{name: "invalid empty suffix", rangeValue: "bytes=-0", size: 100, wantErr: true},
+		{name: "multiple ranges unsupported", rangeValue: "bytes=0-1,3-4", size: 100, wantErr: true},
 	}
 
 	for _, tc := range tests {
