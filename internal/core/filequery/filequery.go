@@ -3,6 +3,7 @@ package filequery
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -15,6 +16,9 @@ func BestMatch(file string, files []string, similarity SimilarityFunc) (string, 
 	if similarity == nil {
 		return "", errors.New("similarity function is required")
 	}
+
+	//TODO: review this
+	file = filepath.Base(file)
 
 	var best string
 	bestScore := 0.0
