@@ -26,9 +26,24 @@ import (
 	"github.com/h2non/filetype"
 )
 
+// semaphore to limit concurrent downloads for 500mmb up to 12gb files, adjust as needed based on server capacity and expected load
+
 // GetFile handles file downloads with optional extraction and range support
 func GetFile(cfg *config.Config) gin.HandlerFunc {
+
+	concurrentDownloads := func() int {
+		if os.Getenv("LIMITS") != "" {
+			p, _ := strconv.Atoi(os.Getenv("LIMITS"))
+			return p
+		}
+		return 10 // default value
+	}()
+	var downloadSemaphore = make(chan struct{}, concurrentDownloads) // allow up to 10 concurrent downloads
 	return func(c *gin.Context) {
+		// Acquire semaphore slot
+		downloadSemaphore <- struct{}{}
+		defer func() { <-downloadSemaphore }() // release slot when done
+
 		filename := strings.TrimSpace(c.Param("filename"))
 		if cfg.AppDebug {
 			log.Printf("debug download start: filename=%q query=%q", filename, c.Request.URL.RawQuery)

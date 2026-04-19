@@ -3,6 +3,8 @@ services:
     build: .
     container_name: goviesdeze
     restart: unless-stopped
+    environment:
+      - LIMITS=8
     ports:
       - 3000:3000
     volumes:
