@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const minSimilarity = 0.4
+const minSimilarity = 0.25
 
 type SimilarityFunc func(a, b string) float64
 
