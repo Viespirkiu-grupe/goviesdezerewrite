@@ -46,7 +46,7 @@ func BestMatch(file string, files []string, similarity SimilarityFunc) (string, 
 		return "", errors.New("file not found in archive [fail]")
 	}
 
-	if bestScore < minSimilarity {
+	if bestScore < minSimilarity() {
 		return "", fmt.Errorf("no file in archive is similar enough to target [fail], best match: %q with score %.2f", best, bestScore)
 		// if !strings.EqualFold(best, file) {
 		// }
