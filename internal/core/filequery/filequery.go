@@ -25,6 +25,7 @@ func BestMatch(file string, files []string, similarity SimilarityFunc) (string, 
 	if similarity == nil {
 		return "", errors.New("similarity function is required")
 	}
+	// file = filepath.Base(file)
 
 	//TODO: review this
 	file = filepath.Base(file)
@@ -40,10 +41,15 @@ func BestMatch(file string, files []string, similarity SimilarityFunc) (string, 
 		}
 	}
 
-	if best == "" || bestScore < minSimilarity {
-		if !strings.EqualFold(best, file) {
-			return "", errors.New("file not found in archive")
-		}
+	if best == "" {
+
+		return "", errors.New("file not found in archive [fail]")
+	}
+
+	if bestScore < minSimilarity {
+		return "", fmt.Errorf("no file in archive is similar enough to target [fail], best match: %q with score %.2f", best, bestScore)
+		// if !strings.EqualFold(best, file) {
+		// }
 	}
 
 	return best, nil

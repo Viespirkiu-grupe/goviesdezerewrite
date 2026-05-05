@@ -85,7 +85,7 @@ func TestBestMatch(t *testing.T) {
 
 		got, err := BestMatch("docs/report.pdf", []string{"docs/r.pdf", "docs/report.pdf"}, func(a, b string) float64 {
 			if a == b {
-				return 0.1
+				return 1
 			}
 			return 0.2
 		})
