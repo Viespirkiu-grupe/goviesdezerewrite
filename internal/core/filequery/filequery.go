@@ -3,12 +3,21 @@ package filequery
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-const minSimilarity = 0.4
+// const minSimilarity = 0.1
+func minSimilarity() float64 {
+	if score, ok := os.LookupEnv("SCORE"); ok {
+		if value, err := strconv.ParseFloat(score, 64); err == nil {
+			return value
+		}
+	}
+	return 0.1
+}
 
 type SimilarityFunc func(a, b string) float64
 
